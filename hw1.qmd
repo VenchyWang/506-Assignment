@@ -1,0 +1,250 @@
+---
+title: "Homework for STATS 506"
+author: "Ziqi Wang"
+date: "`r Sys.Date()`"
+format: html
+code-fold: false
+echo: true
+editor: visual
+---
+
+## Problem 1 - Wine Data
+
+### a. Import the Data
+
+First, we will import the data and set appropriate column names.
+
+```{r, eval=FALSE}
+library(tidyverse)
+
+# Set file paths
+data_path <- "D:/UMich-assignment/506/506-Assignment/wine/wine.data"
+names_path <- "D:/UMich-assignment/506/506-Assignment/wine/wine.names"
+
+# Read wine data
+wine_data <- read.csv(data_path, header = FALSE)
+
+# Read column names from wine.names file
+names_info <- readLines(names_path)
+
+# Extract column names from names_info
+column_names <- gsub(".*: ", "", names_info[grep(":", names_info)])
+column_names <- c("Class", column_names) # Add 'Class' as the first column name
+
+# Assign column names to the data
+colnames(wine_data) <- column_names
+
+# Check the structure of the data
+str(wine_data)
+```
+
+### b. Check Number of Wines per Class
+
+We need to check if the number of wines in each class is correct.
+
+```{r, eval=FALSE}
+# Check the number of wines per class
+table(wine_data$Class)
+```
+The result shows that it is correct.
+
+### c. Use the data to answer the following questions
+  1. Correlation Between Alcohol Content and Color Intensity
+```{r, eval=FALSE}
+# Remove rows with missing values in either column
+wine_data_clean <- na.omit(wine_data[, c("Alcohol", "ColorIntensity")])
+
+# Recalculate the correlation
+correlation <- cor(wine_data_clean$Alcohol, wine_data_clean$ColorIntensity)
+correlation
+```
+  2. Correlation by Class
+```{r, eval=FALSE}
+# Compute correlations by class
+cor_by_class <- wine_data %>%
+  group_by(Class) %>%
+  summarise(correlation = cor(Alcohol, ColorIntensity))
+
+cor_by_class
+```
+  3. Alcohol Content of Wine with Highest Color Intensity
+```{r, eval=FALSE}
+# Find the alcohol content of the wine with the highest color intensity
+max_color_intensity <- wine_data %>%
+  filter(ColorIntensity == max(ColorIntensity)) %>%
+  select(Alcohol)
+
+max_color_intensity
+```
+  4. Percentage of Wines with Higher Proanthocyanins than Ash
+```{r, eval=FALSE}
+# Compute the percentage of wines with higher proanthocyanins compared to ash
+higher_proanthocyanins <- sum(wine_data$Proanthocyanins > wine_data$Ash) / nrow(wine_data) * 100
+higher_proanthocyanins
+```
+### d. Summary Table of Averages
+```{r, eval=FALSE}
+# Calculate average values for each variable
+average_values <- wine_data %>%
+  group_by(Class) %>%
+  summarise(across(everything(), mean)) %>%
+  add_row(!!"Class" := "Overall", across(everything(), ~ mean(wine_data[[cur_column()]])))
+
+average_values
+```
+### e. T-Tests on Phenols Across Classes
+```{r, eval=FALSE}
+# Perform t-tests to compare levels of phenols across the three classes
+class1 <- wine_data %>% filter(Class == 1) %>% pull(Phenols)
+class2 <- wine_data %>% filter(Class == 2) %>% pull(Phenols)
+class3 <- wine_data %>% filter(Class == 3) %>% pull(Phenols)
+
+# Perform pairwise t-tests
+t_test_12 <- t.test(class1, class2)
+t_test_13 <- t.test(class1, class3)
+t_test_23 <- t.test(class2, class3)
+
+# Output t-test results
+t_test_12
+t_test_13
+t_test_23
+```
+## Problem 2 - Wine Data
+### a. Import the Data
+
+```{r, eval=FALSE}
+library(tidyverse)
+
+data_path <- "D:/UMich-assignment/506/506-Assignment/AskAManager.csv"
+
+# Import the dataset
+salary_data <- read.csv(data_path, header = TRUE)
+
+# Check the structure of the data
+str(salary_data)
+```
+### b. Clean the Variable Names
+```{r, eval=FALSE}
+# Use a function like janitor's clean_names for quick simplification
+library(janitor)
+salary_data <- salary_data %>% clean_names()
+
+# Show the cleaned column names
+colnames(salary_data)
+```
+### c. Restrict Data to USD
+```{r, eval=FALSE}
+# Before filtering: check number of rows
+initial_count <- nrow(salary_data)
+
+# Filter for those paid in USD
+salary_data_usd <- salary_data %>% filter(currency == "USD")
+
+# After filtering: check the number of rows
+final_count <- nrow(salary_data_usd)
+
+# Show the number of rows before and after
+initial_count
+final_count
+```
+### d. Eliminate Impossible Ages and Experience
+```{r, eval=FALSE}
+# Create variables for age, years of experience in field, and total years of experience
+# Here, assume that no one starts working before 18, so age minus years of experience should be >= 18
+salary_data_usd <- salary_data_usd %>%
+  filter(age - years_experience_in_field >= 18,
+         age - years_experience_total >= 18)
+
+# Confirm the number of rows after removing impossible values
+nrow(salary_data_usd)
+```
+### e. Eliminate Extreme Salaries
+```{r, eval=FALSE}
+# Explore the salary distribution
+summary(salary_data_usd$annual_salary)
+
+# Set thresholds to eliminate extreme salaries
+# For example: removing salaries < $5,000 or > $1,000,000
+salary_data_clean <- salary_data_usd %>%
+  filter(annual_salary > 5000, annual_salary < 1000000)
+
+# Report the final sample size
+nrow(salary_data_clean)
+)
+```
+The final sample size is:
+```{r, eval=FALSE}
+# Report the final sample size after all filters
+final_sample_size <- nrow(salary_data_clean)
+final_sample_size
+```
+## Problem 3 - Palindromic Numbers
+
+### a. Write `isPalindromic` Function
+
+```{r, eval=FALSE}
+# Function to check if a number is palindromic
+#' Check if a number is palindromic
+#' @param x A positive integer
+#' @return A list with two elements: isPalindromic (logical) and reversed (integer)
+isPalindromic <- function(x) {
+  # Check if input is a valid positive integer
+  if (!is.numeric(x) || x < 0 || x != as.integer(x)) {
+    stop("Input must be a positive integer.")
+  }
+  
+  # Convert the number to a string
+  x_str <- as.character(x)
+  # Reverse the digits
+  reversed_str <- paste(rev(strsplit(x_str, NULL)[[1]]), collapse = "")
+  reversed_num <- as.numeric(reversed_str)
+  
+  # Check if the number is palindromic
+  is_palindrome <- (x == reversed_num)
+  
+  # Return a list with the result
+  return(list(isPalindromic = is_palindrome, reversed = reversed_num))
+}
+
+# Example usage:
+isPalindromic(728827)
+isPalindromic(39951)
+```
+### b. Write `extPalindrome` Function
+```{r, eval=FALSE}
+# Function to find the next palindromic number greater than the input
+#' Find the next palindromic number
+#' @param x A positive integer
+#' @return The next palindromic number greater than x
+nextPalindrome <- function(x) {
+  # Check if input is a valid positive integer
+  if (!is.numeric(x) || x < 0 || x != as.integer(x)) {
+    stop("Input must be a positive integer.")
+  }
+  
+  # Increment the number to find the next palindrome
+  current <- x + 1
+  
+  # Keep searching until we find a palindrome
+  while (!isPalindromic(current)$isPalindromic) {
+    current <- current + 1
+  }
+  
+  return(current)
+}
+
+# Example usage:
+nextPalindrome(7152)
+nextPalindrome(765431537)
+```
+### c. Find the Next Palindromes for the Given Numbers
+```{r, eval=FALSE}
+# Use the functions to find the next palindrome for each number
+numbers <- c(391, 9928, 19272719, 109, 2)
+
+# Find the next palindromic number for each input
+next_palindromes <- sapply(numbers, nextPalindrome)
+
+# Display the results
+next_palindromes
+```
