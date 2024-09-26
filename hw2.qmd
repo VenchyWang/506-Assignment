@@ -1,0 +1,327 @@
+---
+title: "Homework 2"
+author: "Ziqi Wang"
+output:
+  html_document:
+    self_contained: true
+    code_folding: hide
+code-fold: true
+---
+
+# Problem 1
+
+## a
+
+**Version 1**
+
+```{r}
+library(microbenchmark)
+set.seed(2024)
+
+play_dice_loop <- function(n) {
+  total_winnings <- 0
+  for (i in 1:n) {
+    roll <- sample(1:6, 1)
+    if (roll == 3 || roll == 5) {
+      total_winnings <- total_winnings + 2 * roll - 2
+    } else {
+      total_winnings <- total_winnings - 2
+    }
+  }
+  return(total_winnings)
+}
+
+```
+
+**Version 2**
+
+```{r}
+# Version 2: Vectorized implementation
+play_dice_vector <- function(n) {
+  rolls <- sample(1:6, n, replace = TRUE)
+  winnings <- ifelse(rolls == 3 | rolls == 5, 2 * rolls - 2, -2)
+  return(sum(winnings))
+}
+```
+
+**Version 3**
+
+```{r}
+# Version 3: Using table() to collapse dice rolls
+play_dice_table <- function(n) {
+  rolls <- sample(1:6, n, replace = TRUE)
+  rolls
+  # Ensure all dice values (1 to 6) are represented, even if some don't appear
+  roll_table <- table(factor(rolls, levels = 1:6))
+  
+  winnings <- (roll_table["3"] * 6 + roll_table["5"] * 10) - sum(roll_table) * 2
+  return(winnings)
+}
+```
+
+**Version 4**
+
+```{r}
+# Version 4: Using apply
+play_dice_apply <- function(n) {
+  rolls <- sample(1:6, n, replace = TRUE)
+  rolls
+  winnings <- sapply(rolls, function(roll) {
+    if (roll == 3 || roll == 5) {
+      return(2 * roll - 2)
+    } else {
+      return(-2)
+    }
+  })
+  return(sum(winnings))
+}
+```
+
+## b
+
+To demonstrate that all versions work, let's run them for small and large inputs.
+
+```{r}
+# Test with n = 3 and n = 3000
+results_3 <- c(
+  loop = play_dice_loop(3),
+  vector = play_dice_vector(3),
+  table = play_dice_table(3),
+  apply = play_dice_apply(3)
+)
+
+results_3000 <- c(
+  loop = play_dice_loop(3000),
+  vector = play_dice_vector(3000),
+  table = play_dice_table(3000),
+  apply = play_dice_apply(3000)
+)
+
+results_3
+results_3000
+```
+
+## c
+
+To have the same outputs, we need to use `set.seed()` before using the functions. Here's the modified version:
+
+```{r}
+# Test with n = 3 and n = 3000
+set.seed(2024)
+loop = play_dice_loop(3)
+set.seed(2024)
+vector = play_dice_vector(3)
+set.seed(2024)
+table = play_dice_table(3)
+set.seed(2024)
+apply = play_dice_apply(3)
+
+results_3 <- c(
+  loop,
+  vector,
+  table,
+  apply
+)
+
+set.seed(2024)
+loop = play_dice_loop(3000)
+set.seed(2024)
+vector = play_dice_vector(3000)
+set.seed(2024)
+table = play_dice_table(3000)
+set.seed(2024)
+apply = play_dice_apply(3000)
+
+results_3000 <- c(
+  loop,
+  vector,
+  table,
+  apply
+)
+
+
+results_3
+results_3000
+```
+
+## d
+
+We will use the `microbenchmark` package to compare the performance of each implementation for 1,000 and 100,000 dice rolls.
+
+```{r}
+# Benchmark with 1000 rolls
+microbenchmark(
+  loop = play_dice_loop(1000),
+  vector = play_dice_vector(1000),
+  table = play_dice_table(1000),
+  apply = play_dice_apply(1000),
+  times = 10
+)
+
+# Benchmark with 100000 rolls
+microbenchmark(
+  loop = play_dice_loop(100000),
+  vector = play_dice_vector(100000),
+  table = play_dice_table(100000),
+  apply = play_dice_apply(100000),
+  times = 10
+)
+```
+
+Vectorized implementation is by far the fastest. Whether the input size is small or large, the vectorized implementation consistently outperforms all other methods. This is because vectorized operations are optimized in R to handle entire arrays of data at once.
+
+Loop-based implementation (loop) is the slowest. Loops perform very poorly, especially with larger input sizes. This is due to the overhead of processing each dice roll one at a time, which is computationally expensive in R.
+
+table() and apply() are intermediate. Both table() and apply() implementations offer improvements over loops but are still slower than vectorized operations. table() aggregates data into a frequency table, which has more overhead compared to pure vectorized computations. Similarly, apply() is more efficient than loops but can't match vectorization for speed. \## e To determine whether this game is fair, we’ll perform a Monte Carlo simulation. If the expected winnings are negative, the game is not fair.
+
+```{r}
+# Monte Carlo simulation for fairness
+monte_carlo <- function(n_sim = 100000) {
+  total_winnings <- replicate(n_sim, play_dice_vector(1))
+  expected_winnings <- mean(total_winnings)
+  return(expected_winnings)
+}
+
+# Running the simulation
+expected_winnings <- monte_carlo()
+expected_winnings
+```
+
+The value of `expected_winnings = 0.6748` indicates that, on average, a player can expect to win \$0.6748 per game in the dice game, after accounting for the \$2 cost of playing. So the dice game is not fair and favors the player.
+
+# problem 2
+
+## a
+
+Rename the columns of the data to more reasonable lengths.
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Load the dataset
+cars_data <- read.csv("cars.csv")
+
+# Rename columns
+names(cars_data) <- c("Height", "Length", "Width", "Driveline", "Engine_Type", 
+                       "Hybrid", "Num_Gears", "Transmission", "City_MPG", 
+                       "Fuel_Type", "Highway_MPG", "Classification", 
+                       "ID", "Make", "Model_Year", "Year", 
+                       "Horsepower", "Torque")
+
+```
+
+## b
+
+Restrict the data to cars whose Fuel Type is “Gasoline”.
+
+```{r}
+# Filter for gasoline cars
+filtered_data <- cars_data %>% filter(Fuel_Type == "Gasoline")
+```
+
+## c
+
+Examine the distribution of highway gas mileage.
+
+```{r}
+# Examine the distribution of Highway MPG
+ggplot(filtered_data, aes(x = Highway_MPG)) + 
+  geom_histogram(binwidth = 2, fill = "blue", color = "black", alpha = 0.7) + 
+  geom_density(color = "red") +
+  labs(title = "Distribution of Highway MPG", x = "Highway MPG", y = "Frequency")
+
+# Check summary statistics for Highway MPG
+summary(filtered_data$Highway_MPG)
+
+# Check for outliers visually
+ggplot(filtered_data, aes(x = Highway_MPG)) + 
+  geom_boxplot() +
+  labs(title = "Boxplot of Highway MPG")
+```
+
+The results show that given the potential outlier (223.00), it may influence the linear regression model. A common approach is to apply a transformation, such as a logarithmic transformation, to stabilize variance and reduce the influence of outliers. We could consider transforming the Highway MPG variable using log() if it improves the distribution.
+
+```{r}
+# Apply logarithmic transformation if deemed necessary
+filtered_data$Log_Highway_MPG <- log(filtered_data$Highway_MPG)
+
+# Examine the distribution of the transformed variable
+ggplot(filtered_data, aes(x = Log_Highway_MPG)) + 
+  geom_histogram(binwidth = 0.1, fill = "blue", color = "black", alpha = 0.7) + 
+  geom_density(color = "red") +
+  labs(title = "Distribution of Log-transformed Highway MPG", x = "Log Highway MPG", y = "Frequency")
+
+# Check summary statistics for the transformed variable
+summary(filtered_data$Log_Highway_MPG)
+```
+
+The log transformation compresses the scale of the variable, which is beneficial in handling outliers and stabilizing variance.
+
+## d
+
+```{r}
+# Fit a linear regression model using the log-transformed variable
+model_log <- lm(Log_Highway_MPG ~ Torque + Horsepower + Height + Length + Width + as.factor(Year), data = filtered_data)
+summary(model_log)
+```
+
+**Interpretation of the Linear Regression Results** The estimated coefficient for torque is −0.002294, indicating that for every one-unit increase in torque, the log of highway MPG decreases by 0.002294. This translates to a reduction of approximately 0.23% in highway MPG for each additional unit of torque, holding other factors constant. The relationship is highly statistically significant (p \< 2e-16), meaning that increased torque is associated with reduced fuel efficiency on the highway.
+
+## e
+
+```{r}
+# Ensure Year is treated as a categorical variable
+filtered_data$Year <- as.factor(filtered_data$Year)
+
+# Refit the model with the interaction term between Torque and Horsepower
+interaction_model <- lm(Log_Highway_MPG ~ Torque * Horsepower + Height + Length + Width + as.factor(Year), data = filtered_data)
+summary(interaction_model)
+
+library(interactions)
+hp_values <- c(100, 200, 300)  # example values
+
+# Create the interaction plot
+interaction_plot <- interact_plot(interaction_model, pred = Torque, modx = Horsepower, 
+                                  modx.values = hp_values, 
+                                  at = list(Year = "2010"), 
+                                  interval = TRUE, int.width = 0.95) +
+  labs(title = "Interaction between Torque and Horsepower on Highway MPG",
+       x = "Torque",
+       y = "Log Highway MPG")
+
+# Display the plot
+print(interaction_plot)
+```
+
+## f
+
+First create the design matrix. Use the `model.matrix()` function to create the design matrix for the model, including the interaction between Torque and Horsepower.
+
+```{r}
+X <- model.matrix(~ Torque * Horsepower + Height + Length + Width + as.factor(Year), data = filtered_data)
+```
+
+Then extract the response variable`Log_Highway_MPG`.
+
+```{r}
+y <- filtered_data$Log_Highway_MPG
+```
+
+The normal equation is: $\hat{\beta}=(X^TX)^{-1}X^Ty$. We’ll compare the manual results to the coefficients from the lm() function to confirm that they match.
+
+```{r}
+beta_hat <- solve(t(X) %*% X) %*% t(X) %*% y
+
+# Compare the manually calculated coefficients with those from lm
+lm_coefficients <- coef(interaction_model)  # Coefficients from lm for comparison
+
+print("Manually calculated coefficients:")
+print(beta_hat)
+
+print("Coefficients from lm:")
+print(lm_coefficients)
+```
+
+The `beta_hat` vector from the manual calculation matches the lm_coefficients vector obtained from the `lm()` model. It confirms that these two methods produce the same results.
