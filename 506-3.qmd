@@ -1,0 +1,460 @@
+---
+title: "Homework for STATS 506"
+author: "Ziqi Wang"
+date: "`r Sys.Date()`"
+format: html
+code-fold: true
+echo: true
+editor: visual
+---
+
+# Problem 1
+
+## a
+
+1.  Load the Data Use `foreign` to read the `.XPT` files for both datasets.
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(knitr)
+library(readr)
+library(foreign)
+
+# Read the datasets using read.xport from the foreign package
+vix_data <- read.xport("VIX_D.XPT")
+demo_data <- read.xport("DEMO_D.XPT")
+
+# Display a preview of the datasets
+head(vix_data)
+head(demo_data)
+```
+
+2.  Merge the Data Merge the two datasets using the SEQN variable and keep only the matched records.
+
+```{r}
+# Merge the datasets by SEQN
+merged_data <- inner_join(vix_data, demo_data, by = "SEQN")
+
+# Print the total sample size
+total_sample_size <- nrow(merged_data)
+total_sample_size
+```
+
+3.  Display the Merged Data Display a nicely formatted table of the merged data.
+
+```{r}
+# Display a sample of the merged data using knitr::kable
+kable(head(merged_data, 10), caption = "Merged VIX_D and DEMO_D Data (First 10 Rows)")
+```
+
+## b
+
+We categorize Age into 10-year Brackets and Estimate Proportion.
+
+```{r}
+# Create age brackets (10-year intervals)
+merged_data <- merged_data %>%
+  mutate(age_bracket = cut(RIDAGEYR, breaks = seq(0, 100, by = 10), right = FALSE, include.lowest = TRUE))
+
+# Calculate the proportion of people in each age bracket who wear glasses/contact lenses for distance
+proportion_table <- merged_data %>%
+  group_by(age_bracket) %>%
+  summarise(total_respondents = n(),
+            wear_glasses = sum(VIQ220 == 1, na.rm = TRUE),
+            proportion = wear_glasses / total_respondents)
+
+# Display the table using knitr::kable
+kable(proportion_table, digits = 2, caption = "Proportion of Respondents Wearing Glasses/Contact Lenses for Distance by Age Bracket")
+```
+
+## c
+
+1.  Clean the data
+
+```{r}
+# ensure that all variables exist and process NA
+model_data <- merged_data %>%
+  filter(!is.na(RIDAGEYR), 
+         !is.na(RIDRETH1),  # Race/Ethnicity
+         !is.na(RIAGENDR),  # Gender
+         !is.na(INDFMPIR),  # Poverty Income Ratio
+         !is.na(VIQ220)) %>%
+  mutate(glasses_distance = as.numeric(VIQ220 == 1),  
+         gender = as.factor(RIAGENDR),
+         race = as.factor(RIDRETH1),
+         poverty_ratio = INDFMPIR)  # create new wariables
+
+# check the cleaned data
+summary(model_data)
+```
+
+2.  build the model
+
+```{r}
+# Model 1: age
+model1 <- glm(glasses_distance ~ RIDAGEYR, data = model_data, family = binomial)
+
+# Model 2: age, race, gender
+model2 <- glm(glasses_distance ~ RIDAGEYR + race + gender, data = model_data, family = binomial)
+
+# Model 3: age, race, gender, Poverty Income ratio
+model3 <- glm(glasses_distance ~ RIDAGEYR + race + gender + poverty_ratio, data = model_data, family = binomial)
+```
+
+3.  extract the odds ratios, pseudo $R^2$ and AIC of these models
+
+```{r}
+library(pscl)
+
+# Function to extract model statistics
+get_model_stats <- function(model) {
+  # Extract odds ratios
+  odds_ratios <- exp(coef(model))
+  
+  # Extract pseudo R² (McFadden)
+  pseudo_r2 <- pR2(model)["McFadden"]
+  
+  # Extract AIC
+  aic_value <- AIC(model)
+  
+  # Extract sample size
+  n <- nobs(model)
+  
+  return(list(odds_ratios = odds_ratios, pseudo_r2 = pseudo_r2, aic_value = aic_value, n = n))
+}
+
+# Get statistics for each model
+stats_model1 <- get_model_stats(model1)
+stats_model2 <- get_model_stats(model2)
+stats_model3 <- get_model_stats(model3)
+
+# View model stats
+stats_model1
+stats_model2
+stats_model3
+```
+
+4.  Create Summary Table
+
+```{r}
+# Combine model results into a single table
+model_results <- tibble(
+  Model = c("Age Only", "Age, Race, Gender", "Age, Race, Gender, Poverty Income Ratio"),
+  Odds_Ratios = list(stats_model1$odds_ratios, stats_model2$odds_ratios, stats_model3$odds_ratios),
+  Pseudo_R2 = c(stats_model1$pseudo_r2, stats_model2$pseudo_r2, stats_model3$pseudo_r2),
+  AIC = c(stats_model1$aic_value, stats_model2$aic_value, stats_model3$aic_value),
+  Sample_Size = c(stats_model1$n, stats_model2$n, stats_model3$n)
+)
+
+# Display the results in a nice table
+kable(model_results, digits = 2, caption = "Logistic Regression Model Results")
+```
+
+## d
+
+1.  Extracting and Testing Odds Ratio We can use the `summary()` function to check the gender coefficient and its significance.
+
+```{r}
+# Extract summary of model3
+summary(model3)
+
+# Extract the odds ratio for gender (men vs. women)
+odds_ratio_gender <- exp(coef(model3)["gender2"])  # Assuming RIAGENDR is coded as 1 = Male, 2 = Female
+odds_ratio_gender
+```
+
+The odds ratio for gender is approximately 1.67, meaning that the odds of men wearing glasses or contact lenses for distance vision are about 67% higher than the odds for women.
+
+2.  Hypothesis Test for Odds Ratio
+
+We can test the hypothesis for whether the odds differ between men and women:
+
+H₀: The odds of wearing glasses/contact lenses for distance vision are the same for men and women (i.e., odds ratio = 1). H₁: The odds differ between men and women (i.e., odds ratio ≠ 1).
+
+```{r}
+# Extract the p-value for gender coefficient
+p_value_gender <- summary(model3)$coefficients["gender2", "Pr(>|z|)"]
+p_value_gender
+```
+
+The p-value for the gender coefficient is significantly less than 0.05. This indicates strong statistical evidence to reject the null hypothesis that the odds of wearing glasses/contact lenses for distance vision are the same for men and women.
+
+3.  Proportion Test
+
+Next, we can compare the proportions of men and women who wear glasses/contact lenses using a chi-squared test or Fisher's exact test.
+
+```{r}
+# Create a contingency table for glasses/contact lenses use by gender
+contingency_table <- table(model_data$glasses_distance, model_data$gender)
+
+# Perform the chi-squared test
+chi_squared_test <- chisq.test(contingency_table)
+
+# Perform Fisher's exact test if necessary (e.g., for smaller sample sizes)
+fisher_test <- fisher.test(contingency_table)
+
+chi_squared_test
+fisher_test
+```
+
+Both the chi-squared test and Fisher's exact test indicate a statistically significant difference in the proportions of men and women who wear glasses/contact lenses for distance vision.
+
+# Problem 2
+
+## a
+
+1.  Load the database
+
+```{r}
+library(DBI)
+library(RSQLite)
+library(dplyr)
+
+db_file <- "sakila_master.db" 
+# Connect to the SQLite database
+con <- dbConnect(RSQLite::SQLite(), dbname = db_file)
+```
+
+2.  Use SQL query to find the oldest movie and the count of movies released in that year
+
+```{r}
+oldest_movie_query <- "
+SELECT 
+    MIN(release_year) AS oldest_year,
+    COUNT(*) AS movie_count
+FROM 
+    film
+GROUP BY 
+    release_year
+ORDER BY 
+    oldest_year
+LIMIT 1;
+"
+
+# Execute the query and retrieve results
+oldest_movie_result <- dbGetQuery(con, oldest_movie_query)
+oldest_movie_result
+```
+
+## b
+
+1.  Least Common Movie Genre
+
+**Method 1**: SQL and R Operations
+
+```{r}
+# SQL query to extract genres and their counts
+genre_query <- "
+SELECT 
+    g.name AS genre,
+    COUNT(f.film_id) AS movie_count
+FROM 
+    film f
+JOIN 
+    film_category fc ON f.film_id = fc.film_id
+JOIN 
+    category g ON fc.category_id = g.category_id
+GROUP BY 
+    g.name
+ORDER BY 
+    movie_count ASC
+LIMIT 1;
+"
+
+# Execute the query and retrieve results
+least_common_genre_sql <- dbGetQuery(con, genre_query)
+least_common_genre_sql
+```
+
+**Method 2**: Single SQL Query
+
+```{r}
+# Execute the query to find the least common genre directly
+least_common_genre_query <- "
+SELECT 
+    g.name AS genre,
+    COUNT(f.film_id) AS movie_count
+FROM 
+    film f
+JOIN 
+    film_category fc ON f.film_id = fc.film_id
+JOIN 
+    category g ON fc.category_id = g.category_id
+GROUP BY 
+    g.name
+ORDER BY 
+    movie_count ASC
+LIMIT 1;
+"
+
+# Execute the query and retrieve results
+least_common_genre_result <- dbGetQuery(con, least_common_genre_query)
+least_common_genre_result
+```
+
+2.  Countries with Exactly 13 Customers **Method 1**: SQL and R Operations
+
+```{r}
+# SQL query to extract countries and their customer counts
+countries_query <- "
+SELECT 
+    c.country AS country,
+    COUNT(cu.customer_id) AS customer_count
+FROM 
+    customer cu
+JOIN 
+    address a ON cu.address_id = a.address_id
+JOIN 
+    city ci ON a.city_id = ci.city_id
+JOIN 
+    country c ON ci.country_id = c.country_id
+GROUP BY 
+    c.country
+HAVING 
+    customer_count = 13;
+"
+
+# Execute the query and retrieve results
+countries_with_13_customers_sql <- dbGetQuery(con, countries_query)
+countries_with_13_customers_sql
+```
+
+**Method 2**: Single SQL Query
+
+```{r}
+# Execute the query to find countries with exactly 13 customers
+exactly_13_customers_query <- "
+SELECT 
+    c.country AS country
+FROM 
+    customer cu
+JOIN 
+    address a ON cu.address_id = a.address_id
+JOIN 
+    city ci ON a.city_id = ci.city_id
+JOIN 
+    country c ON ci.country_id = c.country_id
+GROUP BY 
+    c.country
+HAVING 
+    COUNT(cu.customer_id) = 13;
+"
+
+# Execute the query and retrieve results
+exactly_13_customers_result <- dbGetQuery(con, exactly_13_customers_query)
+exactly_13_customers_result
+```
+
+Finally we close database connection:
+
+```{r}
+# Close the database connection
+dbDisconnect(con)
+```
+
+# Problem 3
+
+First we load the dataset.
+
+```{r}
+library(tidyverse)
+
+# Load the dataset
+us500_data <- read.csv("US-500.csv", stringsAsFactors = FALSE)
+```
+
+## a
+
+```{r}
+# Extracting domains and TLDs
+us500_data <- us500_data %>%
+  mutate(domain = sub(".*@", "", email),
+         tld = sub(".*\\.", "", domain))
+
+# Calculating proportion of .com emails
+com_proportion <- mean(us500_data$tld == "com")
+com_proportion
+```
+
+So 73.2% of email addresses are hosted at a domain with TLD “.com”
+
+## b
+
+```{r}
+# Checking for non-alphanumeric characters excluding '@' and '.'
+non_alphanumeric_proportion <- mean(grepl("[^a-zA-Z0-9]", gsub("[.@]", "", us500_data$email)))
+non_alphanumeric_proportion
+```
+
+So 24.8% of email addresses have at least one non alphanumeric character in them.
+
+## c
+
+```{r}
+# Extracting area codes from both phone1 and phone2
+us500_data <- us500_data %>%
+  mutate(area_code1 = substr(phone1, 1, 3),
+         area_code2 = substr(phone2, 1, 3))
+
+# Combining area codes into one column for counting
+combined_area_codes <- c(us500_data$area_code1, us500_data$area_code2)
+
+# Finding the top 5 area codes
+top_area_codes <- data.frame(table(combined_area_codes)) %>%
+  arrange(desc(Freq)) %>%
+  head(5)
+top_area_codes
+```
+
+## d
+
+We need to extract apartment numbers from addresses where applicable and remove NA values.
+
+```{r}
+# Extracting apartment numbers from addresses where applicable
+us500_data <- us500_data %>%
+  mutate(apartment_number = as.numeric(sub(".*#(\\d+).*", "\\1", address)))
+
+# Removing NA values for plotting
+apartment_numbers <- na.omit(us500_data$apartment_number)
+
+# Plotting histogram of the log of apartment numbers
+ggplot(data.frame(apartment_number = apartment_numbers), aes(x = log(apartment_number))) +
+  geom_histogram(bins = 30, fill = "blue", color = "black") +
+  labs(title = "Histogram of Log of Apartment Numbers",
+       x = "Log of Apartment Numbers",
+       y = "Frequency")
+```
+
+## e
+
+```{r}
+# Benford's Law Analysis
+benford_test <- function(numbers) {
+  first_digits <- as.numeric(substr(as.character(numbers), 1, 1))
+  first_digit_table <- table(first_digits)
+  
+  # Expected distribution based on Benford's Law
+  expected_distribution <- log10(1 + 1/(1:9))
+  
+  # Observed proportions
+  observed_distribution <- prop.table(first_digit_table)
+  
+  # Chi-squared test
+  chisq_test <- chisq.test(observed_distribution, p = expected_distribution)
+  
+  list(observed = observed_distribution, 
+       expected = expected_distribution, 
+       chisq_result = chisq_test)
+}
+
+apartment_benford <- benford_test(apartment_numbers)
+apartment_benford
+```
+
+The observed distribution of leading digits does not align with the expected distribution according to Benford's Law, particularly for the digit '1,' which is significantly lower than expected.
+
+The p-value of 0.9998 is extremely high, meaning there isn't strong evidence that the apartment numbers deviate from what Benford's Law would predict.
+
+The apartment numbers in the dataset could likely be synthetic or fabricated, as real-world data often displays characteristics that align more closely with Benford's Law, particularly when considering a large and diverse dataset.
