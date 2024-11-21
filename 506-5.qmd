@@ -1,0 +1,412 @@
+---
+title: "Homework 5"
+author: "Ziqi Wang"
+date: "`r Sys.Date()`"
+format: html
+echo: true
+editor: visual
+---
+
+[github repository](https://github.com/VenchyWang/506-Assignment/blob/main/506-5.qmd)
+# Problem 1
+## a
+```{r}
+library(Rcpp)
+```
+Define the S4 class for Rational numbers, including a validator that **ensures the denominator is non-zero**
+```{r}
+setClass(
+  "Rational",
+  slots = c(numerator = "integer", denominator = "integer"),
+  validity = function(object) {
+    if (object@denominator == 0) {
+      stop("Denominator cannot be zero!")
+    }
+    TRUE
+  }
+)
+setGeneric("quotient", function(x, digits = NULL) standardGeneric("quotient"))
+
+setMethod(
+  "quotient",
+  signature(x = "Rational"),
+  function(x, digits = NULL) {
+    result <- x@numerator / x@denominator
+    
+    # If digits argument is provided, format the result accordingly
+    if (!is.null(digits)) {
+      if (is.numeric(digits)) {
+        result <- format(result, digits = digits)
+      } else {
+        stop("The 'digits' argument must be a numeric value.")
+      }
+    }
+    
+    return(as.numeric(result))
+  }
+)
+
+```
+
+**Define the constructor**
+```{r}
+rational <- function(numerator, denominator = 1) {
+  new("Rational", numerator = as.integer(numerator), denominator = as.integer(denominator))
+}
+```
+**Define the show method**
+```{r}
+setMethod(
+  "show",
+  signature(object = "Rational"),
+  function(object) {
+    if (object@denominator == 1) {
+      # Only display numerator if denominator is 1
+      cat(object@numerator, "\n")
+    } else {
+      # Otherwise display as a/b
+      cat(object@numerator, "/", object@denominator, "\n")
+    }
+  }
+)
+```
+**Define the simplify method**
+```{r}
+setGeneric("simplify", function(object) standardGeneric("simplify"))
+setMethod(
+  "simplify",
+  "Rational",
+  function(object) {
+    gcd_value <- gcd(object@numerator, object@denominator)
+    object@numerator <- object@numerator / gcd_value
+    object@denominator <- object@denominator / gcd_value
+    object
+  }
+)
+```
+**Define the quotient method**
+```{r}
+setGeneric("simplify", function(x) standardGeneric("simplify"))
+
+setMethod(
+  "simplify",
+  signature(x = "Rational"),
+  function(x) {
+    gcd_value <- gcd(x@numerator, x@denominator) # Using the gcd function defined earlier
+    new_numerator <- as.integer(x@numerator / gcd_value)
+    new_denominator <- as.integer(x@denominator / gcd_value)
+    rational(new_numerator, new_denominator)
+  }
+)
+```
+
+**Arithmetic operations**
+```{r}
+# Addition
+setMethod(
+  "+",
+  signature(e1 = "Rational", e2 = "Rational"),
+  function(e1, e2) {
+    common_denom <- e1@denominator * e2@denominator
+    new_numer <- (e1@numerator * e2@denominator) + (e2@numerator * e1@denominator)
+    rational(new_numer, common_denom)
+  }
+)
+
+# Subtraction
+setMethod(
+  "-",
+  signature(e1 = "Rational", e2 = "Rational"),
+  function(e1, e2) {
+    common_denom <- e1@denominator * e2@denominator
+    new_numer <- (e1@numerator * e2@denominator) - (e2@numerator * e1@denominator)
+    rational(new_numer, common_denom)
+  }
+)
+
+# Multiplication
+setMethod(
+  "*",
+  signature(e1 = "Rational", e2 = "Rational"),
+  function(e1, e2) {
+    new_numer <- e1@numerator * e2@numerator
+    new_denom <- e1@denominator * e2@denominator
+    rational(new_numer, new_denom)
+  }
+)
+
+# Division
+setMethod(
+  "/",
+  signature(e1 = "Rational", e2 = "Rational"),
+  function(e1, e2) {
+    if (e2@numerator == 0) stop("Cannot divide by zero!")
+    new_numer <- e1@numerator * e2@denominator
+    new_denom <- e1@denominator * e2@numerator
+    rational(new_numer, new_denom)
+  }
+)
+```
+**Define GCD and LCM**
+```{r}
+# Define GCD and LCM using Rcpp
+cppFunction('
+int gcd(int a, int b) {
+  while (b != 0) {
+    int temp = b;
+    b = a % b;
+    a = temp;
+  }
+  return abs(a);
+}
+
+int lcm(int a, int b) {
+  if (a == 0 || b == 0) return 0;
+  return abs(a * b) / gcd(a, b);
+}
+')
+```
+## b. 
+First we create three objects.
+```{r}
+r1 <- rational(24, 6)
+r2 <- rational(7, 230)
+r3 <- rational(0, 4)
+```
+Then we evaluate the example code.
+```{r}
+r1
+r3
+r1 + r2
+r1 - r2
+r1 * r2
+r1 / r2
+r1 + r3
+r1 * r3
+tryCatch(r2 / r3, error = function(e) e)
+quotient(r1)
+quotient(r2)
+quotient(r2, digits = 3)
+tryCatch(quotient(r2, digits = "avocado"), error = function(e) e)
+simplify(r1)
+simplify(r2)
+simplify(r3)
+```
+## c.
+Here are some invalid creation examples.
+```{r}
+tryCatch(Rational(1, 0), error = function(e) e)
+tryCatch(Rational("a", "b"), error = function(e) e)
+```
+## Problem 2
+```{r}
+library(tidyverse)
+library(plotly)
+
+df <- read.csv("df_for_ml_improved_new_market.csv")
+
+genre_columns <- grep("^Genre", names(df))
+
+df$Genre___Others[df$Genre___Painting == 1] <- 0
+
+df$genre <- NA
+df$genre[df$Genre___Photography == 1] <- "Photography"
+df$genre[df$Genre___Print == 1] <- "Print"
+df$genre[df$Genre___Sculpture == 1] <- "Sculpture"
+df$genre[df$Genre___Painting == 1] <- "Painting"
+df$genre[df$Genre___Others == 1] <- "Others"
+
+df$genre <- factor(df$genre, levels = c("Photography", "Print", "Sculpture", "Painting", "Others"))
+
+df$price_usd <- as.numeric(df$price_usd)  
+df$year <- as.numeric(df$year)  
+```
+## a.
+```{r}
+# Plotting genre distribution over years
+genre_plot <- df %>%
+  ggplot(aes(x = year, fill = genre)) +
+  geom_bar(position = "fill") +
+  labs(title = "Distribution of Genre of Sales Across Years",
+       x = "Year", y = "Proportion of Sales") +
+  theme_minimal()
+
+# Display the plot
+genre_plot
+```
+The plot shows that before the year 2000, the largest market share was held by painting. After that, photography emerged as the dominant genre, followed by sculpture. Since then, the market shares of these genres have remained relatively stable, with no significant changes observed.
+
+## b.
+### i. Sales Price Over Time
+We will create a simple interactive plot to show how the sales price in USD has changed over time.
+```{r}
+select_top_values <- function(vec, percentile) {
+  val <- quantile(vec, percentile)
+  return(vec[vec > val])
+}
+
+save <- list()
+for (y in unique(df$year)) {
+  prices <- df[df$year == y, "price_usd"]
+  save[[as.character(y)]] <-
+    data.frame(year = y,
+               price_usd = select_top_values(prices, .95))
+}
+
+arttop <- do.call(rbind, save)
+
+artmedian <- aggregate(df$price_usd, by = list(df$year),
+                       FUN = median, na.rm = TRUE)
+names(artmedian) <- c("year", "price_usd")
+```
+
+```{r}
+p <- ggplot(arttop, aes(x = factor(year), y = price_usd)) +
+  geom_boxplot(aes(linetype = "Boxplot"), outlier.shape = "x", outlier.size = 1) +
+  geom_line(aes(group = NA, linetype = "Median"), data = artmedian,
+            linewidth = 1.2) +
+  labs(title = "Changes in top 5% of prices",
+       x = "Year",
+       y = "Price in Million USD",
+       linetype = "") +
+  scale_linetype_manual(values = c("Boxplot" = "solid", "Median" = "dashed")) +
+  scale_y_continuous(labels = paste(seq(0, 1.4, .2), "M", sep = ""),
+                     breaks = seq(0, 1400000, by = 200000)) +
+  theme(legend.position = "inside",
+        legend.position.inside = c(.1, .95),
+        legend.background = element_blank())
+
+# Convert ggplot to an interactive plotly plot
+interactive_plot <- ggplotly(p)
+
+# Show the plot
+interactive_plot
+```
+Prior to 2001, the price changes were relatively small. However, after 2001, there was a rapid increase in prices, particularly between 2005 and 2006, when the price surged by more than \$10,000. A significant drop in prices occurred between 2008 and 2009, followed by a period of relative stability, with prices stabilizing around \$30,000.
+
+### ii. How Genre Affects Sales Price Change Over Time
+```{R}
+artmedian <- aggregate(df$price_usd, by = list(df$year, df$genre),
+                   FUN = median, na.rm = TRUE)
+names(artmedian) <- c("year", "genre", "price_usd")
+art975 <- aggregate(df$price_usd, by = list(df$year, df$genre),
+                   FUN = quantile, .975, na.rm = TRUE)
+names(art975) <- c("year", "genre", "price_usd")
+```
+
+```{r}
+artmedian$genre <- factor(artmedian$genre, levels = rev(unique(artmedian$genre)))
+art975$genre <- factor(art975$genre, levels = rev(unique(art975$genre)))
+artcombine <- bind_rows(
+  artmedian %>% mutate(measure = "Median"),
+  art975 %>% mutate(measure = "97.5%")
+)
+
+p <- ggplot(artcombine, aes(x = year, y = price_usd, color = genre, linetype = measure)) +
+  geom_line() +
+  scale_y_continuous(
+    name = "Price in Thousands USD",
+    breaks = seq(0, 350000, by = 50000),
+    labels = paste(seq(0, 350, by = 50), "k", sep = "")
+  ) +
+  scale_x_continuous(
+    name = NULL,
+    breaks = seq(1997, 2012, by = 2),
+    limits = c(1997, 2012)
+  ) +
+  labs(title = "Changes in Price by Genre") +
+  scale_color_manual(values = 1:5) +
+  scale_linetype_manual(values = c("97.5%" = "dotted", "Median" = "solid")) +
+  theme(
+    legend.position = "inside",
+    legend.position.inside = c(.1, .75),
+    legend.background = element_blank(),
+    legend.title = element_blank()
+  )
+
+# Convert ggplot to an interactive plotly plot
+interactive_plot <- ggplotly(p)
+
+# Show the plot
+interactive_plot
+```
+
+The plot indicates that average prices remained relatively stable before 2000. From 2000 to 2008, there was a significant increase in prices. After the sharp decline in prices between 2008 and 2009, the average prices stabilized. Among the genres, photography had the highest prices, while sculpture exhibited the lowest and most stable prices. Additionally, print prices showed the most fluctuations over time.
+
+## Problem 3
+### a
+**Departure**
+```{r}
+library(tidyverse)
+library(nycflights13)
+library(data.table)
+
+flights <- copy(flights)
+airports <- copy(airports)
+
+setDT(flights)
+setDT(airports)
+
+departure_delays <- flights[, .(
+    mean_departure_delay = mean(dep_delay, na.rm = TRUE),
+    median_departure_delay = median(dep_delay, na.rm = TRUE),
+    flight_count = .N
+  ), by = origin][flight_count >= 10, ]  # Filter for origin with flight_count >= 10
+
+
+departure_delays <- departure_delays[airports, on = .(origin = faa)]
+
+departure_delays <- departure_delays[!is.na(mean_departure_delay) & !is.na(median_departure_delay)]
+
+departure_delays <- departure_delays[, .(name, mean_departure_delay, median_departure_delay)]
+departure_delays <- departure_delays[order(-mean_departure_delay)]
+
+
+departure_delays
+
+```
+**Arrival**
+```{r}
+result <- flights[
+  , .(
+    mean_delay = mean(arr_delay, na.rm = TRUE),
+    med_delay = median(arr_delay, na.rm = TRUE),
+    numflights = .N
+  ),
+  by = dest
+][
+  numflights >= 10
+][
+  , faa := dest
+][
+  airports,
+  on = "faa",
+  nomatch = 0
+][
+  , name := fifelse(is.na(name), faa, name)
+][
+  , .(name, mean_delay, med_delay)
+][
+  order(-mean_delay)
+]
+
+# Print the result
+print(result, nrow(result))
+```
+### b
+```{r}
+planes <- copy(planes)
+setDT(planes)
+
+result <- flights[planes, on = .(tailnum), 
+                  .(time = air_time / 60, 
+                    mph = distance / (air_time / 60), 
+                    model)
+]
+result <- result[, .(avgmph = mean(mph, na.rm = TRUE),
+                     nflights = .N), by = model]
+
+result <- result[order(-avgmph)][1]
+
+result
+```
