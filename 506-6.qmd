@@ -1,0 +1,182 @@
+---
+title: "Homework 6"
+author: "Ziqi Wang"
+date: "`r Sys.Date()`"
+format: html
+echo: true
+editor: visual
+---
+
+```{r}
+library(Lahman)
+library(dplyr)
+library(parallel)
+library(future)
+library(furrr)
+```
+
+Before the calculation, we need to examin the data to make sure the data we use is valid.
+```{r}
+Fielding %>%
+  filter(InnOuts == 0) %>%
+  summarize(count = n())
+
+Fielding %>%
+  filter(is.na(PO) | is.na(A)) %>%
+  summarize(count = n())
+```
+It shows that some of the `InnOuts` are `0`, they should be removed.
+```{r}
+Fielding <- Fielding %>%
+  filter(InnOuts > 0)
+```
+Then we can calculate the average RF for each team:
+```{r}
+Fielding <- Fielding %>%
+  mutate(RF = 3 * (PO + A) / InnOuts) %>%
+  filter(!is.na(RF))  # Ensure no NA values in RF
+
+team_avg_rf <- Fielding %>%
+  group_by(teamID) %>%
+  summarize(avg_RF = mean(RF, na.rm = TRUE), .groups = "drop")
+```
+## a.
+
+### 1.
+Now let's do it without parallel processing:
+```{r,warning=FALSE}
+bootstrap_rf <- function(data, n_samples = 1000) {
+  results <- replicate(n_samples, {
+    sampled_data <- data %>%
+      group_by(teamID) %>%
+      sample_frac(size = 1, replace = TRUE) %>%
+      summarize(avg_RF = mean(RF, na.rm = TRUE), .groups = "drop")
+    sampled_data
+  }, simplify = FALSE)
+  
+  bind_rows(results) %>%
+    group_by(teamID) %>%
+    summarize(boot_sd = sd(avg_RF), .groups = "drop")
+}
+
+
+team_rf_sd_non_parallel <- bootstrap_rf(Fielding, n_samples = 1000)
+
+final_results_non_parallel <- team_avg_rf %>%
+  left_join(team_rf_sd_non_parallel, by = "teamID")
+
+# head(final_results_non_parallel)
+```
+### 2.
+Stratified Bootstrap with Parallel Processing:
+```{r}
+bootstrap_rf_parallel <- function(data, n_samples = 1000) {
+  n_cores <- detectCores() - 1  
+  cl <- makeCluster(n_cores)    # Create a cluster
+  
+  clusterExport(cl, varlist = c("data"), envir = environment())
+  clusterEvalQ(cl, library(dplyr)) 
+
+  results <- parLapply(cl, 1:n_samples, function(i) {
+    sampled_data <- data %>%
+      group_by(teamID) %>%
+      sample_frac(size = 1, replace = TRUE) %>%
+      summarize(avg_RF = mean(RF, na.rm = TRUE), .groups = "drop")
+    return(sampled_data)
+  })
+  
+  stopCluster(cl)  
+  
+  bind_rows(results) %>%
+    group_by(teamID) %>%
+    summarize(boot_sd = sd(avg_RF), .groups = "drop")
+}
+
+team_rf_sd_parallel <- bootstrap_rf_parallel(Fielding, n_samples = 1000)
+
+final_results_parallel <- team_avg_rf %>%
+  left_join(team_rf_sd_parallel, by = "teamID")
+
+#head(final_results_parallel)
+```
+### 3.
+Stratified Bootstrap with Futures:
+```{r,warning=FALSE}
+bootstrap_rf_future <- function(data, n_samples = 1000) {
+  results <- future_map_dfr(1:n_samples, ~{
+    sampled_data <- data %>%
+      group_by(teamID) %>%
+      sample_frac(size = 1, replace = TRUE) %>%
+      summarize(avg_RF = mean(RF, na.rm = TRUE), .groups = "drop")
+    sampled_data
+  })
+  
+  results %>%
+    group_by(teamID) %>%
+    summarize(boot_sd = sd(avg_RF), .groups = "drop")
+}
+
+plan(multisession) 
+
+team_rf_sd_future <- bootstrap_rf_future(Fielding, n_samples = 1000)
+
+final_results_future <- team_avg_rf %>%
+  left_join(team_rf_sd_future, by = "teamID") %>%
+  rename(future_sd = boot_sd)
+
+# head(final_results)
+```
+## b.
+Now we combine Results and Find Top 10 Teams:
+```{r}
+final_results_non_parallel <- team_avg_rf %>%
+  left_join(team_rf_sd_non_parallel, by = "teamID") %>%
+  rename(non_parallel_sd = boot_sd)
+
+final_results_parallel <- team_avg_rf %>%
+  left_join(team_rf_sd_parallel, by = "teamID") %>%
+  rename(parallel_sd = boot_sd)
+
+final_results_future <- team_avg_rf %>%
+  left_join(team_rf_sd_future, by = "teamID") %>%
+  rename(future_sd = boot_sd)
+
+combined_results <- final_results_non_parallel %>%
+  left_join(final_results_parallel, by = c("teamID", "avg_RF")) %>%
+  left_join(final_results_future, by = c("teamID", "avg_RF")) %>%
+  arrange(desc(avg_RF)) %>%
+  slice_head(n = 10)
+
+print(combined_results)
+```
+## c.
+```{r, warning=FALSE}
+time_non_parallel <- system.time({
+  team_rf_sd_non_parallel <- bootstrap_rf(Fielding, n_samples = 1000)
+})
+
+time_parallel <- system.time({
+  team_rf_sd_parallel <- bootstrap_rf_parallel(Fielding, n_samples = 1000)
+})
+
+time_future <- system.time({
+  team_rf_sd_future <- bootstrap_rf_future(Fielding, n_samples = 1000)
+})
+```
+
+```{r}
+time_comparison <- data.frame(
+  Method = c("Non-Parallel", "Parallel", "Future"),
+  User_Time = c(time_non_parallel["user.self"], time_parallel["user.self"], time_future["user.self"]),
+  System_Time = c(time_non_parallel["sys.self"], time_parallel["sys.self"], time_future["sys.self"]),
+  Elapsed_Time = c(time_non_parallel["elapsed"], time_parallel["elapsed"], time_future["elapsed"])
+)
+
+print(time_comparison)
+```
+
+Parallelization (both `Parallel` and `Future`) shows a clear advantage, particularly for User_Time, as computations are distributed.
+
+The `Non-Parallel` method had the shortest Elapsed_Time, likely because it avoids the setup and communication overhead seen in the parallelized methods.
+
+In this task, the `Parallel` method performed the best in terms of User_Time.
